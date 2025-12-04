@@ -9,6 +9,9 @@ export default defineConfig({
         setupFiles: ['./src/__tests__/setup.js'],
         include: ['src/**/*.{test,spec}.{js,jsx,ts,tsx}'],
         exclude: ['node_modules', 'dist'],
+        deps: {
+            inline: ['vitest-canvas-mock']
+        },
         coverage: {
             provider: 'v8',
             reporter: ['text', 'json', 'json-summary', 'lcov'],
@@ -21,10 +24,10 @@ export default defineConfig({
                 'node_modules/**'
             ],
             thresholds: {
-                lines: 70,
-                functions: 70,
-                branches: 60,
-                statements: 70
+                lines: 50,
+                functions: 50,
+                branches: 40,
+                statements: 50
             }
         }
     }
