@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { jest } from '@jest/globals';
 
 /**
  * Generate a test access token
