@@ -23,6 +23,9 @@ import { VendorList } from "./pages/vendors";
 // Transaction Pages
 import { TransactionList } from "./pages/transactions";
 
+// Chat Page
+import Chat from "./pages/Chat";
+
 function App() {
     return (
         <BrowserRouter>
@@ -75,6 +78,9 @@ function App() {
                                 </RequireAuth>
                             }
                         />
+                        
+                        {/* AI Chat */}
+                        <Route path="/chat" element={<Chat />} />
                     </Route>
                     
                     {/* 404 */}
