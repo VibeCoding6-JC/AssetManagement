@@ -1,0 +1,264 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '18'
+
+jobs:
+  # ═══════════════════════════════════════════════════════════
+  # JOB 1: Backend Unit Tests (Fast - Mock DB)
+  # ═══════════════════════════════════════════════════════════
+  backend-unit-tests:
+    name: Backend Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:unit -- --coverage --coverageReporters=json-summary --coverageReporters=text
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-unit-coverage
+          path: backend/coverage/coverage-summary.json
+          retention-days: 1
+
+  # ═══════════════════════════════════════════════════════════
+  # JOB 2: Backend Integration Tests (Real MySQL)
+  # ═══════════════════════════════════════════════════════════
+  backend-integration-tests:
+    name: Backend Integration Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: testpassword
+          MYSQL_DATABASE: it_asset_management_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for MySQL
+        run: |
+          until mysqladmin ping -h 127.0.0.1 -u root -ptestpassword --silent; do
+            echo "Waiting for MySQL..."
+            sleep 2
+          done
+
+      - name: Run integration tests
+        run: npm run test:integration -- --coverage --coverageReporters=json-summary --coverageReporters=text
+        env:
+          NODE_ENV: test
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_NAME: it_asset_management_test
+          DB_USER: root
+          DB_PASS: testpassword
+          ACCESS_TOKEN_SECRET: test-access-secret-key-12345
+          REFRESH_TOKEN_SECRET: test-refresh-secret-key-12345
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-integration-coverage
+          path: backend/coverage/coverage-summary.json
+          retention-days: 1
+
+  # ═══════════════════════════════════════════════════════════
+  # JOB 3: Frontend Tests (Mock API)
+  # ═══════════════════════════════════════════════════════════
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:coverage
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/coverage-summary.json
+          retention-days: 1
+
+  # ═══════════════════════════════════════════════════════════
+  # JOB 4: Post PR Comment with Results
+  # ═══════════════════════════════════════════════════════════
+  pr-comment:
+    name: Post PR Comment
+    needs: [backend-unit-tests, backend-integration-tests, frontend-tests]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Download backend unit coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-unit-coverage
+          path: ./coverage/backend-unit
+
+      - name: Download backend integration coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-integration-coverage
+          path: ./coverage/backend-integration
+
+      - name: Download frontend coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-coverage
+          path: ./coverage/frontend
+
+      - name: Generate PR Comment
+        id: generate-comment
+        run: |
+          # Read coverage files
+          BACKEND_UNIT=$(cat ./coverage/backend-unit/coverage-summary.json 2>/dev/null || echo '{"total":{"lines":{"pct":0},"statements":{"pct":0},"functions":{"pct":0},"branches":{"pct":0}}}')
+          BACKEND_INT=$(cat ./coverage/backend-integration/coverage-summary.json 2>/dev/null || echo '{"total":{"lines":{"pct":0},"statements":{"pct":0},"functions":{"pct":0},"branches":{"pct":0}}}')
+          FRONTEND=$(cat ./coverage/frontend/coverage-summary.json 2>/dev/null || echo '{"total":{"lines":{"pct":0},"statements":{"pct":0},"functions":{"pct":0},"branches":{"pct":0}}}')
+
+          # Extract coverage percentages
+          BU_LINES=$(echo $BACKEND_UNIT | jq -r '.total.lines.pct // 0')
+          BU_STMTS=$(echo $BACKEND_UNIT | jq -r '.total.statements.pct // 0')
+          BI_LINES=$(echo $BACKEND_INT | jq -r '.total.lines.pct // 0')
+          BI_STMTS=$(echo $BACKEND_INT | jq -r '.total.statements.pct // 0')
+          FE_LINES=$(echo $FRONTEND | jq -r '.total.lines.pct // 0')
+          FE_STMTS=$(echo $FRONTEND | jq -r '.total.statements.pct // 0')
+
+          # Determine status icons
+          BU_STATUS="✅"
+          BI_STATUS="✅"
+          FE_STATUS="✅"
+
+          # Create comment body
+          COMMENT="## 🧪 CI Test Results
+
+          ### 📊 Test Summary
+
+          | Job | Status | Lines Coverage | Statements Coverage |
+          |-----|--------|----------------|---------------------|
+          | Backend Unit Tests | $BU_STATUS | ${BU_LINES}% | ${BU_STMTS}% |
+          | Backend Integration Tests | $BI_STATUS | ${BI_LINES}% | ${BI_STMTS}% |
+          | Frontend Tests | $FE_STATUS | ${FE_LINES}% | ${FE_STMTS}% |
+
+          ### ✅ All checks passed!
+
+          This PR has passed all required CI checks and is ready for review.
+
+          ---
+
+          <details>
+          <summary>📋 Coverage Thresholds</summary>
+
+          | Component | Minimum Required | Current |
+          |-----------|------------------|---------|
+          | Backend | 80% | ${BU_LINES}% |
+          | Frontend | 70% | ${FE_LINES}% |
+
+          </details>
+
+          ---
+          *Generated by GitHub Actions CI Pipeline • $(date -u '+%Y-%m-%d %H:%M:%S UTC')*"
+
+          # Save to file for the next step
+          echo "$COMMENT" > comment.md
+
+      - name: Post comment to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const comment = fs.readFileSync('comment.md', 'utf8');
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(c => 
+              c.user.type === 'Bot' && 
+              c.body.includes('🧪 CI Test Results')
+            );
+            
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
