@@ -13,7 +13,8 @@ import {
     HiOutlineMenu,
     HiOutlineX,
     HiOutlineChevronDown,
-    HiOutlineUser
+    HiOutlineUser,
+    HiOutlineSparkles
 } from "react-icons/hi";
 
 const Sidebar = () => {
@@ -33,6 +34,11 @@ const Sidebar = () => {
             name: "Dashboard",
             icon: HiOutlineHome,
             path: "/dashboard"
+        },
+        {
+            name: "AI Chat",
+            icon: HiOutlineSparkles,
+            path: "/chat"
         },
         {
             name: "Assets",

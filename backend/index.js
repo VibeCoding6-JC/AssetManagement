@@ -20,6 +20,7 @@ import VendorRoute from "./routes/VendorRoute.js";
 import AssetRoute from "./routes/AssetRoute.js";
 import TransactionRoute from "./routes/TransactionRoute.js";
 import DashboardRoute from "./routes/DashboardRoute.js";
+import ChatRoute from "./routes/ChatRoute.js";
 
 // ES Module fix for __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -53,6 +54,7 @@ app.use("/api/vendors", VendorRoute);
 app.use("/api/assets", AssetRoute);
 app.use("/api/transactions", TransactionRoute);
 app.use("/api/dashboard", DashboardRoute);
+app.use("/api/chat", ChatRoute);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
